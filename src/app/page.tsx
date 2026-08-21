@@ -2,12 +2,13 @@
 
 import {
   motion,
+  AnimatePresence,
   useMotionValue,
   useTransform,
   useSpring,
   type Variants,
 } from "framer-motion";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 // A single background shape card that tilts subtly toward the cursor with a glassmorphism look
 function ShapeCard() {
@@ -74,15 +75,15 @@ const frameVariants: Variants = {
   },
 };
 
-const columnVariants: Variants = {
-  hidden: { opacity: 0, y: 20 },
+const featureVariants: Variants = {
+  hidden: { opacity: 0, x: -16 },
   visible: (i: number) => ({
     opacity: 1,
-    y: 0,
+    x: 0,
     transition: {
-      duration: 0.6,
+      duration: 0.5,
       ease: [0.16, 1, 0.3, 1],
-      delay: 0.6 + i * 0.1,
+      delay: 0.5 + i * 0.1,
     },
   }),
 };
@@ -101,68 +102,166 @@ const cardVariants: Variants = {
   }),
 };
 
-const COLUMNS = [
+type ColumnKey = "applied" | "interviewing" | "offer";
+
+type Card = {
+  id: string;
+  title: string;
+  company: string;
+  salary: string;
+  tag: string;
+};
+
+const COLUMN_META: { key: ColumnKey; label: string }[] = [
+  { key: "applied", label: "Applied" },
+  { key: "interviewing", label: "Interviewing" },
+  { key: "offer", label: "Offer" },
+];
+
+const NEXT_COLUMN: Record<ColumnKey, ColumnKey> = {
+  applied: "interviewing",
+  interviewing: "offer",
+  offer: "applied",
+};
+
+const INITIAL_CARDS: Record<ColumnKey, Card[]> = {
+  applied: [
+    {
+      id: "c1",
+      title: "Frontend Engineer",
+      company: "Stripe",
+      salary: "$160k",
+      tag: "Remote",
+    },
+    {
+      id: "c2",
+      title: "UI/UX Designer",
+      company: "Linear",
+      salary: "$145k",
+      tag: "Hybrid",
+    },
+  ],
+  interviewing: [
+    {
+      id: "c3",
+      title: "Design Engineer",
+      company: "Vercel",
+      salary: "$180k",
+      tag: "Remote",
+    },
+    {
+      id: "c4",
+      title: "Product Lead",
+      company: "Airbnb",
+      salary: "$210k",
+      tag: "SF",
+    },
+  ],
+  offer: [
+    {
+      id: "c5",
+      title: "Staff Developer",
+      company: "Figma",
+      salary: "$240k",
+      tag: "Remote",
+    },
+    {
+      id: "c6",
+      title: "Senior Creator",
+      company: "Apple",
+      salary: "$220k",
+      tag: "Cupertino",
+    },
+  ],
+};
+
+// Side-panel copy — each entry highlights a real part of the mockup on hover/focus
+const FEATURES: {
+  id: string;
+  label: string;
+  description: string;
+  target: ColumnKey | "toolbar" | "sync";
+}[] = [
   {
-    label: "Applied",
-    count: 12,
-    key: "applied",
-    items: [
-      {
-        title: "Frontend Engineer",
-        company: "Stripe",
-        salary: "$160k",
-        tag: "Remote",
-      },
-      {
-        title: "UI/UX Designer",
-        company: "Linear",
-        salary: "$145k",
-        tag: "Hybrid",
-      },
-    ],
+    id: "sync",
+    label: "Live sync, always on",
+    description:
+      "Every update, from a new application to a status change, lands across your devices the moment it happens. No refresh, no stale board.",
+    target: "sync",
   },
   {
-    label: "Interviewing",
-    count: 3,
-    key: "interviewing",
-    items: [
-      {
-        title: "Design Engineer",
-        company: "Vercel",
-        salary: "$180k",
-        tag: "Remote",
-      },
-      { title: "Product Lead", company: "Airbnb", salary: "$210k", tag: "SF" },
-    ],
+    id: "filters",
+    label: "Filters that actually filter",
+    description:
+      "Switch between All, Active, and Archived and the board narrows instantly, so a crowded pipeline never feels like clutter.",
+    target: "toolbar",
   },
   {
-    label: "Offer",
-    count: 1,
-    key: "offer",
-    items: [
-      {
-        title: "Staff Developer",
-        company: "Figma",
-        salary: "$240k",
-        tag: "Remote",
-      },
-      {
-        title: "Senior Creator",
-        company: "Apple",
-        salary: "$220k",
-        tag: "Cupertino",
-      },
-    ],
+    id: "applied",
+    label: "Applied, at a glance",
+    description:
+      "Company, role, salary, and work mode sit right on the card. You'll never open a tab just to remember what you applied to.",
+    target: "applied",
+  },
+  {
+    id: "interviewing",
+    label: "Tap a card to move it",
+    description:
+      "Click any card to advance it to the next stage. It's a stand-in for drag and drop, and it's just as satisfying.",
+    target: "interviewing",
+  },
+  {
+    id: "offer",
+    label: "Offers, front and center",
+    description:
+      "The Offer column is where the whole board has been pointing. Comp is visible immediately, so comparisons take seconds.",
+    target: "offer",
   },
 ];
 
 export default function Hero() {
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState<"all" | "active" | "archived">(
+    "all",
+  );
+  const [columns, setColumns] =
+    useState<Record<ColumnKey, Card[]>>(INITIAL_CARDS);
+  const [activeFeature, setActiveFeature] = useState<string | null>(null);
+
+  const totalCount = useMemo(
+    () => Object.values(columns).reduce((sum, list) => sum + list.length, 0),
+    [columns],
+  );
+
+  const visibleColumns = useMemo(() => {
+    if (activeTab === "active")
+      return COLUMN_META.filter((c) => c.key !== "offer");
+    if (activeTab === "archived")
+      return COLUMN_META.filter((c) => c.key === "offer");
+    return COLUMN_META;
+  }, [activeTab]);
+
+  function advanceCard(from: ColumnKey, id: string) {
+    setColumns((prev) => {
+      const card = prev[from].find((c) => c.id === id);
+      if (!card) return prev;
+      const to = NEXT_COLUMN[from];
+      return {
+        ...prev,
+        [from]: prev[from].filter((c) => c.id !== id),
+        [to]: [card, ...prev[to]],
+      };
+    });
+  }
+
+  const highlight = (target: string) =>
+    activeFeature === target
+      ? "ring-2 ring-brand-primary/60 shadow-[0_0_0_6px_rgba(99,102,241,0.08)]"
+      : "";
 
   return (
-    <section className="relative w-full max-w-7xl mx-auto px-6 pt-24 pb-36 min-h-[820px] overflow-hidden selection:bg-brand-primary selection:text-white">
+    <section className="relative w-full max-w-[1600px] mx-auto px-6 pt-24 pb-36 min-h-[900px] overflow-hidden selection:bg-brand-primary selection:text-white">
       {/* AMBIENT GLOWS — Creates top-tier studio lighting atmosphere */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-gradient-to-tr from-brand-primary/20 via-indigo-500/15 to-purple-500/10 blur-[140px] rounded-full pointer-events-none -z-10" />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-gradient-to-tr from-brand-primary/20 via-indigo-500/15 to-purple-500/10 blur-[140px] rounded-full pointer-events-none -z-10" />
 
       {/* BACKGROUND LAYER — Interactive tilting shape cards */}
       <div className={`absolute inset-0 ${BG_GRID} -z-20 opacity-55 p-4`}>
@@ -185,57 +284,112 @@ export default function Hero() {
         </motion.button>
       </nav>
 
-      {/* CENTERED CONTENT COLUMN */}
-      <div className="relative z-10 flex flex-col items-center text-center">
+      {/* CENTERED INTRO — badge, headline, subhead, CTA sit dead-center above the demo */}
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={textVariants}
+        className="relative z-10 flex flex-col items-center text-center max-w-2xl mx-auto"
+      >
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/90 border border-brand-secondary/10 shadow-sm backdrop-blur-md mb-6 cursor-pointer"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary" />
+          </span>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-brand-secondary/80 font-semibold">
+            v2.4 Live Sync Active
+          </span>
+        </motion.div>
+
+        <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-brand-secondary">
+          Where careers find{" "}
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-primary via-indigo-600 to-purple-600">
+            momentum
+          </span>
+          .
+        </h1>
+
+        <p className="mt-6 text-lg text-brand-secondary/60 leading-relaxed">
+          Job hunting shouldn&apos;t mean losing track of where you applied,
+          forgetting to follow up, or wondering if you&apos;re actually making
+          progress.
+        </p>
+
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          className="mt-8 text-sm font-semibold bg-brand-secondary text-white px-6 py-3 rounded-full shadow-lg shadow-brand-secondary/10 hover:bg-brand-primary transition-all duration-300"
+        >
+          Start tracking free
+        </motion.button>
+      </motion.div>
+
+      {/* FEATURE LIST + MOCKUP — this pair is centered as one group below the intro,
+          instead of stretching to the section's full width */}
+      <div className="relative z-10 mt-16 max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-10 items-center">
+        {/* LEFT: interactive feature list */}
         <motion.div
           initial="hidden"
           animate="visible"
           variants={textVariants}
-          className="flex flex-col items-center max-w-2xl"
+          className="flex flex-col items-start text-left"
         >
-          {/* Eyebrow badge */}
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/90 border border-brand-secondary/10 shadow-sm backdrop-blur-md mb-6 cursor-pointer"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary" />
-            </span>
-            <span className="font-mono text-xs uppercase tracking-[0.2em] text-brand-secondary/80 font-semibold">
-              v2.4 Live Sync Active
-            </span>
-          </motion.div>
-
-          <h1 className="text-5xl sm:text-7xl font-bold tracking-tight text-brand-secondary">
-            Where careers find{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-primary via-indigo-600 to-purple-600">
-              momentum
-            </span>
-            .
-          </h1>
-
-          <p className="mt-6 text-lg sm:text-xl text-brand-secondary/60 leading-relaxed max-w-xl">
-            Job hunting shouldn&apos;t mean losing track of where you applied,
-            forgetting to follow up, or wondering if you&apos;re actually making
-            progress.
-          </p>
+          {/* FEATURE LIST — hover or focus a row to highlight the matching part of the mockup */}
+          <ul className="flex flex-col gap-1 w-full">
+            {FEATURES.map((feature, i) => (
+              <motion.li
+                key={feature.id}
+                custom={i}
+                variants={featureVariants}
+                onMouseEnter={() => setActiveFeature(feature.target)}
+                onMouseLeave={() => setActiveFeature(null)}
+                onFocus={() => setActiveFeature(feature.target)}
+                onBlur={() => setActiveFeature(null)}
+                tabIndex={0}
+                className={`group cursor-default rounded-2xl px-4 py-3.5 border transition-all outline-none ${
+                  activeFeature === feature.target
+                    ? "bg-white border-brand-primary/30 shadow-md shadow-brand-primary/5"
+                    : "border-transparent hover:bg-white/60"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                      activeFeature === feature.target
+                        ? "bg-brand-primary"
+                        : "bg-brand-secondary/20"
+                    }`}
+                  />
+                  <span className="text-sm font-semibold text-brand-secondary">
+                    {feature.label}
+                  </span>
+                </div>
+                <p className="mt-1.5 pl-4 text-xs leading-relaxed text-brand-secondary/55">
+                  {feature.description}
+                </p>
+              </motion.li>
+            ))}
+          </ul>
         </motion.div>
 
-        {/* Dashboard Mockup - High fidelity window container with depth */}
+        {/* RIGHT: enlarged, interactive dashboard mockup */}
         <motion.div
           initial="hidden"
           animate="visible"
           variants={frameVariants}
           style={{ transformPerspective: 1200 }}
-          className="relative mt-16 w-full max-w-[680px] rounded-3xl border border-white/90 bg-white/90 backdrop-blur-2xl shadow-[0_30px_100px_-20px_rgba(28,28,30,0.18)] overflow-hidden"
+          className="relative w-full max-w-[980px]"
         >
-          {/* FLOATING NOTIFICATION BADGES (Interactive extra elements) */}
+          {/* FLOATING NOTIFICATION BADGES — live outside the clipped panel below, so they
+              genuinely float beside the frame instead of being cropped by its rounded corners */}
           <motion.div
             initial={{ opacity: 0, x: -20, y: 10 }}
             animate={{ opacity: 1, x: 0, y: 0 }}
             transition={{ delay: 1.2, duration: 0.6 }}
-            className="absolute -left-12 top-24 hidden sm:flex items-center gap-3 bg-white/90 backdrop-blur-xl border border-white shadow-xl px-4 py-2.5 rounded-2xl z-20 pointer-events-none"
+            className="absolute -left-6 -top-6 hidden xl:flex items-center gap-3 bg-white/95 backdrop-blur-xl border border-white shadow-xl px-4 py-2.5 rounded-2xl z-20 pointer-events-none -rotate-3"
           >
             <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 text-sm font-bold">
               ✨
@@ -254,7 +408,7 @@ export default function Hero() {
             initial={{ opacity: 0, x: 20, y: 10 }}
             animate={{ opacity: 1, x: 0, y: 0 }}
             transition={{ delay: 1.4, duration: 0.6 }}
-            className="absolute -right-12 bottom-16 hidden sm:flex items-center gap-3 bg-white/90 backdrop-blur-xl border border-white shadow-xl px-4 py-2.5 rounded-2xl z-20 pointer-events-none"
+            className="absolute -right-6 -bottom-6 hidden xl:flex items-center gap-3 bg-white/95 backdrop-blur-xl border border-white shadow-xl px-4 py-2.5 rounded-2xl z-20 pointer-events-none rotate-3"
           >
             <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 text-sm font-bold">
               🚀
@@ -269,102 +423,131 @@ export default function Hero() {
             </div>
           </motion.div>
 
-          {/* Window Chrome */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-brand-secondary/5 bg-brand-secondary/[0.01]">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-red-400/80 hover:opacity-100 transition-opacity cursor-pointer" />
-              <span className="w-3 h-3 rounded-full bg-amber-400/80 hover:opacity-100 transition-opacity cursor-pointer" />
-              <span className="w-3 h-3 rounded-full bg-emerald-400/80 hover:opacity-100 transition-opacity cursor-pointer" />
-            </div>
-            <div className="flex items-center gap-2 px-3.5 py-1 rounded-full bg-brand-secondary/[0.04] border border-brand-secondary/5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-mono text-[11px] text-brand-secondary/60 font-medium">
-                stackapply.app/workspace/active
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-brand-secondary/40">
-              <span className="text-xs font-mono">⌘K</span>
-            </div>
-          </div>
-
-          {/* Sub-toolbar filter switchers */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-brand-secondary/5 bg-white/40">
-            <div className="flex items-center gap-2">
-              {["all", "active", "archived"].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`text-xs font-medium px-3 py-1 rounded-lg capitalize transition-all ${
-                    activeTab === tab
-                      ? "bg-brand-secondary text-white shadow-xs"
-                      : "text-brand-secondary/60 hover:text-brand-secondary hover:bg-brand-secondary/5"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-            <div className="text-[11px] font-mono text-brand-secondary/40">
-              16 total applications tracked
-            </div>
-          </div>
-
-          {/* Kanban Columns */}
-          <div className="grid grid-cols-3 gap-4 p-5 bg-gradient-to-b from-transparent to-brand-secondary/[0.02]">
-            {COLUMNS.map((col, i) => (
-              <motion.div
-                key={col.label}
-                custom={i}
-                initial="hidden"
-                animate="visible"
-                variants={columnVariants}
-                className="flex flex-col gap-3 p-2.5 rounded-2xl bg-brand-secondary/[0.02] border border-brand-secondary/5"
+          {/* Clipped panel — chrome, toolbar, and columns live in here so their rounded
+              corners and backgrounds stay clean, without cropping the badges above */}
+          <div className="relative rounded-3xl border border-white/90 bg-white/90 backdrop-blur-2xl shadow-[0_30px_100px_-20px_rgba(28,28,30,0.18)] overflow-hidden">
+            {/* Window Chrome */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-brand-secondary/5 bg-brand-secondary/[0.01]">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-red-400/80 hover:opacity-100 transition-opacity cursor-pointer" />
+                <span className="w-3 h-3 rounded-full bg-amber-400/80 hover:opacity-100 transition-opacity cursor-pointer" />
+                <span className="w-3 h-3 rounded-full bg-emerald-400/80 hover:opacity-100 transition-opacity cursor-pointer" />
+              </div>
+              <div
+                className={`flex items-center gap-2 px-3.5 py-1 rounded-full bg-brand-secondary/[0.04] border border-brand-secondary/5 transition-all ${highlight(
+                  "sync",
+                )}`}
               >
-                <div className="flex items-center justify-between px-1.5 pt-1">
-                  <span className="font-mono text-[11px] uppercase tracking-wider text-brand-secondary/60 font-semibold">
-                    {col.label}
-                  </span>
-                  <span
-                    className={`font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 ${
-                      col.key === "interviewing"
-                        ? "bg-brand-primary text-white shadow-sm shadow-brand-primary/20"
-                        : "bg-brand-secondary/8 text-brand-secondary/60"
-                    }`}
-                  >
-                    {col.count}
-                  </span>
-                </div>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="font-mono text-[11px] text-brand-secondary/60 font-medium">
+                  stackapply.app/workspace/active
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-brand-secondary/40">
+                <span className="text-xs font-mono">⌘K</span>
+              </div>
+            </div>
 
-                {col.items.map((item, j) => (
-                  <motion.div
-                    key={j}
-                    custom={j}
-                    variants={cardVariants}
-                    whileHover={{ y: -3, scale: 1.01 }}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                      col.key === "interviewing" && j === 0
-                        ? "border-brand-primary/40 bg-white shadow-md shadow-brand-primary/5 ring-1 ring-brand-primary/10"
-                        : "border-brand-secondary/8 bg-white/70 hover:bg-white shadow-xs"
+            {/* Sub-toolbar filter switchers — now actually filters the board below */}
+            <div
+              className={`flex items-center justify-between px-6 py-3.5 border-b border-brand-secondary/5 bg-white/40 transition-all rounded-none ${highlight(
+                "toolbar",
+              )}`}
+            >
+              <div className="flex items-center gap-2">
+                {(["all", "active", "archived"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-lg capitalize transition-all ${
+                      activeTab === tab
+                        ? "bg-brand-secondary text-white shadow-xs"
+                        : "text-brand-secondary/60 hover:text-brand-secondary hover:bg-brand-secondary/5"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-bold text-brand-secondary tracking-tight">
-                        {item.title}
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              <div className="text-[11px] font-mono text-brand-secondary/40">
+                {totalCount} total applications tracked
+              </div>
+            </div>
+
+            {/* Kanban Columns — click a card to advance it to the next stage */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 p-6 bg-gradient-to-b from-transparent to-brand-secondary/[0.02] min-h-[360px]">
+              <AnimatePresence mode="popLayout">
+                {visibleColumns.map((col, i) => (
+                  <motion.div
+                    key={col.key}
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.3, delay: i * 0.05 }}
+                    className={`flex flex-col gap-3 p-3 rounded-2xl bg-brand-secondary/[0.02] border border-brand-secondary/5 transition-all ${highlight(
+                      col.key,
+                    )}`}
+                  >
+                    <div className="flex items-center justify-between px-1.5 pt-1">
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-brand-secondary/60 font-semibold">
+                        {col.label}
                       </span>
-                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-brand-secondary/5 text-brand-secondary/60">
-                        {item.tag}
+                      <span
+                        className={`font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 ${
+                          col.key === "interviewing"
+                            ? "bg-brand-primary text-white shadow-sm shadow-brand-primary/20"
+                            : "bg-brand-secondary/8 text-brand-secondary/60"
+                        }`}
+                      >
+                        {columns[col.key].length}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-[11px] text-brand-secondary/60 font-medium">
-                      <span>{item.company}</span>
-                      <span className="font-mono text-emerald-600 font-semibold">
-                        {item.salary}
-                      </span>
-                    </div>
+
+                    <AnimatePresence mode="popLayout">
+                      {columns[col.key].map((item, j) => (
+                        <motion.button
+                          key={item.id}
+                          layout
+                          layoutId={item.id}
+                          custom={j}
+                          variants={cardVariants}
+                          initial="hidden"
+                          animate="visible"
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          onClick={() => advanceCard(col.key, item.id)}
+                          whileHover={{ y: -3, scale: 1.015 }}
+                          whileTap={{ scale: 0.98 }}
+                          className={`group p-4 rounded-2xl border text-left transition-all cursor-pointer w-full ${
+                            col.key === "interviewing" && j === 0
+                              ? "border-brand-primary/40 bg-white shadow-md shadow-brand-primary/5 ring-1 ring-brand-primary/10"
+                              : "border-brand-secondary/8 bg-white/70 hover:bg-white shadow-xs"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-sm font-bold text-brand-secondary tracking-tight">
+                              {item.title}
+                            </span>
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-brand-secondary/5 text-brand-secondary/60">
+                              {item.tag}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-brand-secondary/60 font-medium">
+                            <span>{item.company}</span>
+                            <span className="font-mono text-emerald-600 font-semibold">
+                              {item.salary}
+                            </span>
+                          </div>
+                          <span className="mt-2 block text-[10px] font-mono uppercase tracking-wide text-brand-primary/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                            Tap to advance →
+                          </span>
+                        </motion.button>
+                      ))}
+                    </AnimatePresence>
                   </motion.div>
                 ))}
-              </motion.div>
-            ))}
+              </AnimatePresence>
+            </div>
           </div>
         </motion.div>
       </div>
